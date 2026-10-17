@@ -1,0 +1,111 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  student
+  admin
+}
+
+enum SenderType {
+  student
+  ai
+  admin
+}
+
+enum MessageStatus {
+  answered
+  pending_admin
+}
+
+// Official student list (needed to register)
+model StudentRecord {
+  id             Int     @id @default(autoincrement())
+  fullName       String  @map("full_name") @db.VarChar(100)
+  rollNo         String  @unique @map("roll_no") @db.VarChar(20)
+  registrationNo String  @unique @map("registration_no") @db.VarChar(20)
+  isClaimed      Boolean @default(false) @map("is_claimed")
+  user           User?
+
+  @@map("student_records")
+}
+
+model User {
+  id              Int            @id @default(autoincrement())
+  studentRecordId Int?           @unique @map("student_record_id")
+  email           String?        @unique @db.VarChar(120)
+  passwordHash    String         @map("password_hash")
+  role            Role
+  isActive        Boolean        @default(true) @map("is_active")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  studentRecord   StudentRecord? @relation(fields: [studentRecordId], references: [id])
+  tokens          AuthToken[]
+  kbEntries       KbEntry[]
+  ownMessages     Message[]      @relation("ChatOwner")
+  sentMessages    Message[]      @relation("MessageSender")
+
+  @@map("users")
+}
+
+// Only the token hash is stored
+model AuthToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("auth_tokens")
+}
+
+model Category {
+  id      Int       @id @default(autoincrement())
+  name    String    @unique @db.VarChar(50)
+  entries KbEntry[]
+
+  @@map("categories")
+}
+
+model KbEntry {
+  id         Int       @id @default(autoincrement())
+  categoryId Int       @map("category_id")
+  createdBy  Int       @map("created_by")
+  question   String    @db.VarChar(255)
+  answer     String
+  embedding  Json
+  isActive   Boolean   @default(true) @map("is_active")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  category   Category  @relation(fields: [categoryId], references: [id])
+  creator    User      @relation(fields: [createdBy], references: [id])
+  messages   Message[]
+
+  @@map("kb_entries")
+}
+
+model Message {
+  id          Int            @id @default(autoincrement())
+  studentId   Int            @map("student_id")
+  senderId    Int?           @map("sender_id")
+  senderType  SenderType     @map("sender_type")
+  content     String
+  status      MessageStatus?
+  matchedKbId Int?           @map("matched_kb_id")
+  similarity  Float?
+  replyToId   Int?           @map("reply_to_id")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  student     User           @relation("ChatOwner", fields: [studentId], references: [id])
+  sender      User?          @relation("MessageSender", fields: [senderId], references: [id])
+  matchedKb   KbEntry?       @relation(fields: [matchedKbId], references: [id], onDelete: SetNull)
+  replyTo     Message?       @relation("Replies", fields: [replyToId], references: [id])
+  replies     Message[]      @relation("Replies")
+
+  @@index([studentId, createdAt])
+  @@map("messages")
+}
